@@ -75,7 +75,8 @@ def rolling_backtest_clf(pipeline, data, feature_list, n_splits=5):
 def train_classifier_for_horizon(df, horizon_hours, horizon_label):
     df = df.sort_values("ts").reset_index(drop=True)
     df = add_future_weather_features(df, horizon_hours)
-    df["target_aqi"] = df["aqi"].shift(-horizon_hours)
+    rolling_avg_aqi = df["aqi"].rolling(window=24, min_periods=18).mean()
+    df["target_aqi"] = rolling_avg_aqi.shift(-horizon_hours)
 
     data = df.dropna(
         subset=["target_aqi"] + FUTURE_WEATHER_FEATURES + ["future_wind_dir_sin", "future_wind_dir_cos"]

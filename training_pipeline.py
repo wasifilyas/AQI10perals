@@ -48,7 +48,8 @@ FUTURE_WEATHER_FEATURES = [
 def add_future_weather_features(df, horizon_hours):
     df = df.copy()
     for col in FUTURE_WEATHER_RAW:
-        df[f"future_{col}"] = df[col].shift(-horizon_hours)
+        rolling_col = df[col].rolling(window=24, min_periods=18).mean()
+        df[f"future_{col}"] = rolling_col.shift(-horizon_hours)
     df["future_wind_dir_sin"] = np.sin(2 * np.pi * df["future_wind_direction"] / 360)
     df["future_wind_dir_cos"] = np.cos(2 * np.pi * df["future_wind_direction"] / 360)
     return df
@@ -145,7 +146,8 @@ def rolling_backtest(pipeline, data, feature_list, n_splits=5):
 def train_and_evaluate(df, horizon_hours, horizon_label):
     df = df.sort_values("ts").reset_index(drop=True)
     df = add_future_weather_features(df, horizon_hours)
-    df["target"] = df["aqi"].shift(-horizon_hours)
+    rolling_avg_aqi = df["aqi"].rolling(window=24, min_periods=18).mean()
+    df["target"] = rolling_avg_aqi.shift(-horizon_hours)
 
     data = df.dropna(
         subset=["target"] + FUTURE_WEATHER_FEATURES + ["future_wind_dir_sin", "future_wind_dir_cos"]

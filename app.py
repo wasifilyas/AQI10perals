@@ -127,11 +127,18 @@ def fetch_forecast_weather():
     return df
 
 
-def get_future_weather_at(forecast_df, target_time):
-    forecast_df = forecast_df.copy()
-    forecast_df["diff"] = (forecast_df["ts"] - target_time).abs()
-    closest = forecast_df.sort_values("diff").iloc[0]
-    return closest
+def get_future_weather_avg(forecast_df, target_time, horizon_hours):
+    """Average forecasted weather over the 24h window ending at target_time,
+    matching the daily-average target the models were trained on."""
+    window_start = target_time - pd.Timedelta(hours=24)
+    window_end = target_time
+    mask = (forecast_df["ts"] > window_start) & (forecast_df["ts"] <= window_end)
+    window = forecast_df[mask]
+    if window.empty:
+        forecast_df = forecast_df.copy()
+        forecast_df["diff"] = (forecast_df["ts"] - target_time).abs()
+        return forecast_df.sort_values("diff").iloc[0]
+    return window.mean(numeric_only=True)
 
 
 @st.cache_resource
@@ -443,7 +450,7 @@ def main():
     st.set_page_config(page_title=f"{CITY_NAME} AQI Forecast", page_icon="🌫️", layout="wide")
     inject_custom_css()
     st.markdown(f'<div class="hero-title">{CITY_NAME} Air Quality Station</div>', unsafe_allow_html=True)
-    st.markdown('<div class="hero-sub">Live readings and 3-day forecast, updated hourly</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-sub">Live readings and 3-day forecast (daily average), updated hourly</div>', unsafe_allow_html=True)
 
     supabase = get_supabase()
 
@@ -477,7 +484,7 @@ def main():
         st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
-    st.subheader("3-Day Forecast")
+    st.subheader("3-Day Forecast (Daily Average)")
 
     now = datetime.now(timezone.utc)
     cols = st.columns(3)
@@ -485,7 +492,7 @@ def main():
 
     for i, (horizon_label, horizon_hours) in enumerate(HORIZONS.items()):
         target_time = now + pd.Timedelta(hours=horizon_hours)
-        future_weather = get_future_weather_at(forecast_df, target_time)
+        future_weather = get_future_weather_avg(forecast_df, target_time, horizon_hours)
         feature_row = build_feature_row(latest_row, future_weather)
 
         reg_model, reg_record = load_active_model(supabase, horizon_label, "regressor")
@@ -512,6 +519,7 @@ def main():
                 </div>
             </div>
             """, unsafe_allow_html=True)
+            st.caption("Predicted avg AQI")
             if clf_record:
                 st.caption(f"Model accuracy: {clf_record['accuracy']:.1%}")
 
@@ -519,7 +527,7 @@ def main():
     st.subheader("🔍 Why these predictions? (Day 1 breakdown)")
     day1_label = list(HORIZONS.keys())[0]
     day1_target = now + pd.Timedelta(hours=HORIZONS[day1_label])
-    day1_weather = get_future_weather_at(forecast_df, day1_target)
+    day1_weather = get_future_weather_avg(forecast_df, day1_target, HORIZONS[day1_label])
     day1_features = build_feature_row(latest_row, day1_weather)
     day1_reg_model, _ = load_active_model(supabase, day1_label, "regressor")
     if day1_reg_model:
@@ -546,7 +554,7 @@ def main():
             color = AQI_CATEGORY_COLORS.get(r["category"], "#cccccc")
             st.markdown(f"""
             <div style="border-left: 3px solid {color}; padding-left: 12px; margin: 12px 0;">
-                <strong>{r['day']} ({r['date']}) — {r['category']}</strong> (AQI {r['predicted_aqi']:.0f})<br>
+                <strong>{r['day']} ({r['date']}) — {r['category']}</strong> (Avg AQI {r['predicted_aqi']:.0f})<br>
                 <span style="color:#94A3B8; font-size:0.9rem;">{guidance}</span>
             </div>
             """, unsafe_allow_html=True)
@@ -554,7 +562,7 @@ def main():
     else:
         st.markdown("""
         <div class="glass-card" style="border-color: rgba(0,228,0,0.3);">
-            ✅ <strong>No air quality alerts</strong> — forecasted AQI stays in the Good/Moderate range for the next 3 days.
+            ✅ <strong>No air quality alerts</strong> — forecasted average AQI stays in the Good/Moderate range for the next 3 days.
         </div>
         """, unsafe_allow_html=True)
 
