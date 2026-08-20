@@ -12,6 +12,9 @@ from sklearn.base import clone
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.ensemble import VotingRegressor
 from sklearn.linear_model import Ridge
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import HistGradientBoostingRegressor
@@ -32,6 +35,8 @@ NUMERIC_FEATURES = [
     "pm2_5", "pm10", "co", "no2", "so2", "o3",
     "aqi_lag_1h", "aqi_lag_24h", "aqi_change_rate",
     "pm2_5_roll6", "pm2_5_roll24", "aqi_roll6", "aqi_roll24",
+    "aqi_roll_std_6", "aqi_roll_std_24",
+    "boundary_layer_height",
     "hour_sin", "hour_cos", "month_sin", "month_cos",
     "doy_sin", "doy_cos", "day_of_week",
     "wind_dir_sin", "wind_dir_cos", "dispersion_index",
@@ -40,7 +45,7 @@ NUMERIC_FEATURES = [
     "future_wind_dir_sin", "future_wind_dir_cos",
 ]
 
-FUTURE_WEATHER_RAW = ["temperature", "humidity", "wind_speed", "pressure", "precipitation","wind_direction"]
+FUTURE_WEATHER_RAW = ["temperature", "humidity", "wind_speed", "pressure", "precipitation","wind_direction","boundary_layer_height"]
 FUTURE_WEATHER_FEATURES = [
     f"future_{col}" for col in FUTURE_WEATHER_RAW
 ]
@@ -98,6 +103,9 @@ def add_cyclical_encoding(df):
     df["pm2_5_roll24"] = df["pm2_5"].rolling(window=24, min_periods=1).mean()
     df["aqi_roll6"] = df["aqi"].rolling(window=6, min_periods=1).mean()
     df["aqi_roll24"] = df["aqi"].rolling(window=24, min_periods=1).mean()
+    df["aqi_roll_std_6"] = df["aqi"].rolling(window=6, min_periods=2).std().fillna(0)
+    df["aqi_roll_std_24"] = df["aqi"].rolling(window=24, min_periods=2).std().fillna(0)
+
 
     return df
 
@@ -142,10 +150,10 @@ def rolling_backtest(pipeline, data, feature_list, n_splits=5):
     std_rmse = np.std([m["rmse"] for m in fold_metrics])
 
     return {"rmse": avg_rmse, "mae": avg_mae, "r2": avg_r2, "rmse_std": std_rmse}
-
 def train_and_evaluate(df, horizon_hours, horizon_label):
     df = df.sort_values("ts").reset_index(drop=True)
     df = add_future_weather_features(df, horizon_hours)
+
     rolling_avg_aqi = df["aqi"].rolling(window=24, min_periods=18).mean()
     df["target"] = rolling_avg_aqi.shift(-horizon_hours)
 
@@ -155,7 +163,6 @@ def train_and_evaluate(df, horizon_hours, horizon_label):
 
     split_idx = int(len(data) * 0.85)
     train_df = data.iloc[:split_idx]
-
     X_train, y_train = train_df[NUMERIC_FEATURES], train_df["target"]
 
     tscv = TimeSeriesSplit(n_splits=5)
@@ -168,12 +175,16 @@ def train_and_evaluate(df, horizon_hours, horizon_label):
         ),
         "gradient_boosting": (
             HistGradientBoostingRegressor(random_state=42),
-            {"model__max_depth": [4, 8], "model__learning_rate": [0.05, 0.1]},
+            {
+                "model__max_depth": [4, 6, 8],
+                "model__learning_rate": [0.03, 0.05, 0.1],
+                "model__max_iter": [200, 400],
+                "model__l2_regularization": [0.0, 0.5, 1.0],
+            },
         ),
     }
 
-    best_name, best_arch, best_rmse = None, None, float("inf")
-
+    tuned_pipelines = {}
     print(f"  Selecting best model type via grid search...")
     for name, (model, param_grid) in candidates.items():
         pipe = build_pipeline(model)
@@ -182,23 +193,34 @@ def train_and_evaluate(df, horizon_hours, horizon_label):
             scoring="neg_root_mean_squared_error", n_jobs=-1,
         )
         search.fit(X_train, y_train)
-        cv_rmse = -search.best_score_
-        print(f"    {name}: best_params={search.best_params_} cv_rmse={cv_rmse:.2f}")
+        tuned_pipelines[name] = search.best_estimator_
+        print(f"    {name}: best_params={search.best_params_} cv_rmse={-search.best_score_:.2f}")
 
-        if cv_rmse < best_rmse:
-            best_name, best_arch, best_rmse = name, search.best_estimator_, cv_rmse
+    # Build a Ridge + Gradient Boosting ensemble from the already-tuned pipelines
+    ensemble = VotingRegressor([
+        ("ridge", tuned_pipelines["ridge"]),
+        ("gb", tuned_pipelines["gradient_boosting"]),
+    ])
 
-    print(f"  Best architecture: {best_name}. Running rolling backtest for honest metrics...")
-    metrics = rolling_backtest(best_arch, data, NUMERIC_FEATURES, n_splits=5)
-    print(f"  [{horizon_label}] {best_name} BACKTEST AVG: "
-          f"RMSE={metrics['rmse']:.2f} (+/-{metrics['rmse_std']:.2f}) "
-          f"MAE={metrics['mae']:.2f} R2={metrics['r2']:.3f}")
+    all_final_candidates = {**tuned_pipelines, "ensemble_ridge_gb": ensemble}
 
-    print(f"  Refitting {best_name} on full dataset for deployment...")
-    final_pipeline = clone(best_arch)
+    best_name, best_arch, best_rmse, best_metrics = None, None, float("inf"), None
+    for name, arch in all_final_candidates.items():
+        print(f"  Running rolling backtest for {name}...")
+        metrics = rolling_backtest(arch, data, NUMERIC_FEATURES, n_splits=5)
+        print(f"    [{horizon_label}] {name} BACKTEST AVG: RMSE={metrics['rmse']:.2f} "
+              f"MAE={metrics['mae']:.2f} R2={metrics['r2']:.3f}")
+        if metrics["rmse"] < best_rmse:
+            best_name, best_arch, best_rmse, best_metrics = name, arch, metrics["rmse"], metrics
+
+    print(f"  Best overall: {best_name}. Refitting on full dataset for deployment...")
+    final_pipeline = clone(best_arch) if best_name != "ensemble_ridge_gb" else VotingRegressor([
+        ("ridge", clone(tuned_pipelines["ridge"])),
+        ("gb", clone(tuned_pipelines["gradient_boosting"])),
+    ])
     final_pipeline.fit(data[NUMERIC_FEATURES], data["target"])
 
-    return best_name, final_pipeline, metrics
+    return best_name, final_pipeline, best_metrics
 
 def save_model(pipeline, horizon_label, model_name, metrics):
     version = f"{horizon_label}_{model_name}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"

@@ -23,7 +23,7 @@ def fetch_weather(start_date, end_date):
         "longitude": CITY_LON,
         "start_date": start_date,
         "end_date": end_date,
-        "hourly": "temperature_2m,relative_humidity_2m,windspeed_10m,winddirection_10m,surface_pressure,precipitation",
+        "hourly": "temperature_2m,relative_humidity_2m,windspeed_10m,winddirection_10m,surface_pressure,precipitation,boundary_layer_height",
         "timezone": "UTC",
     }
     for attempt in range(5):
@@ -73,6 +73,7 @@ def build_dataframe(weather_json, air_json):
         "humidity": w["relative_humidity_2m"],
         "wind_speed": w["windspeed_10m"],
         "wind_direction": w["winddirection_10m"],
+        "boundary_layer_height": w["boundary_layer_height"],
         "pressure": w["surface_pressure"],
         "precipitation": w["precipitation"],
         "pm2_5": a["pm2_5"],

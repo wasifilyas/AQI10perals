@@ -20,17 +20,18 @@ CITY_LAT = float(os.getenv("CITY_LAT", "24.8607"))
 CITY_LON = float(os.getenv("CITY_LON", "67.0011"))
 
 HORIZONS = {"24h": 24, "48h": 48, "72h": 72}
-
 NUMERIC_FEATURES = [
     "temperature", "humidity", "wind_speed", "pressure", "precipitation",
     "pm2_5", "pm10", "co", "no2", "so2", "o3",
     "aqi_lag_1h", "aqi_lag_24h", "aqi_change_rate",
     "pm2_5_roll6", "pm2_5_roll24", "aqi_roll6", "aqi_roll24",
+    "aqi_roll_std_6", "aqi_roll_std_24",
+    "boundary_layer_height",
     "hour_sin", "hour_cos", "month_sin", "month_cos",
     "doy_sin", "doy_cos", "day_of_week",
     "wind_dir_sin", "wind_dir_cos", "dispersion_index",
     "future_temperature", "future_humidity", "future_wind_speed",
-    "future_pressure", "future_precipitation",
+    "future_pressure", "future_precipitation", "future_boundary_layer_height",
     "future_wind_dir_sin", "future_wind_dir_cos",
 ]
 
@@ -79,7 +80,6 @@ def fetch_recent_features(_supabase, limit=48):
     df = df.sort_values("ts").reset_index(drop=True)
     return df
 
-
 def add_engineered_features(df):
     df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24)
     df["hour_cos"] = np.cos(2 * np.pi * df["hour"] / 24)
@@ -98,6 +98,8 @@ def add_engineered_features(df):
     df["pm2_5_roll24"] = df["pm2_5"].rolling(window=24, min_periods=1).mean()
     df["aqi_roll6"] = df["aqi"].rolling(window=6, min_periods=1).mean()
     df["aqi_roll24"] = df["aqi"].rolling(window=24, min_periods=1).mean()
+    df["aqi_roll_std_6"] = df["aqi"].rolling(window=6, min_periods=2).std().fillna(0)
+    df["aqi_roll_std_24"] = df["aqi"].rolling(window=24, min_periods=2).std().fillna(0)
 
     return df
 
@@ -108,7 +110,7 @@ def fetch_forecast_weather():
     params = {
         "latitude": CITY_LAT,
         "longitude": CITY_LON,
-        "hourly": "temperature_2m,relative_humidity_2m,windspeed_10m,winddirection_10m,surface_pressure,precipitation",
+        "hourly": "temperature_2m,relative_humidity_2m,windspeed_10m,winddirection_10m,surface_pressure,precipitation,boundary_layer_height",
         "timezone": "UTC",
         "forecast_days": 4,
     }
@@ -123,6 +125,7 @@ def fetch_forecast_weather():
         "wind_direction": data["winddirection_10m"],
         "pressure": data["surface_pressure"],
         "precipitation": data["precipitation"],
+        "boundary_layer_height": data["boundary_layer_height"],
     })
     return df
 
@@ -168,7 +171,6 @@ def load_active_model(_supabase, horizon_label, model_type):
     model = joblib.load(local_path)
     return model, record
 
-
 def build_feature_row(latest_row, future_weather_row):
     row = latest_row.copy()
     row["future_temperature"] = future_weather_row["temperature"]
@@ -176,11 +178,11 @@ def build_feature_row(latest_row, future_weather_row):
     row["future_wind_speed"] = future_weather_row["wind_speed"]
     row["future_pressure"] = future_weather_row["pressure"]
     row["future_precipitation"] = future_weather_row["precipitation"]
+    row["future_boundary_layer_height"] = future_weather_row["boundary_layer_height"]
     row["future_wind_dir_sin"] = np.sin(2 * np.pi * future_weather_row["wind_direction"] / 360)
     row["future_wind_dir_cos"] = np.cos(2 * np.pi * future_weather_row["wind_direction"] / 360)
     return pd.DataFrame([row])[NUMERIC_FEATURES]
-
-
+    
 def inject_custom_css():
     st.markdown("""
     <style>
