@@ -31,18 +31,12 @@ HORIZONS = {"24h": 24, "48h": 48, "72h": 72}
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 NUMERIC_FEATURES = [
-    "temperature", "humidity", "wind_speed", "pressure", "precipitation",
-    "pm2_5", "pm10", "co", "no2", "so2", "o3",
-    "aqi_lag_1h", "aqi_lag_24h", "aqi_change_rate",
-    "pm2_5_roll6", "pm2_5_roll24", "aqi_roll6", "aqi_roll24",
-    "aqi_roll_std_6", "aqi_roll_std_24",
-    "boundary_layer_height",
-    "hour_sin", "hour_cos", "month_sin", "month_cos",
-    "doy_sin", "doy_cos", "day_of_week",
-    "wind_dir_sin", "wind_dir_cos", "dispersion_index",
-    "future_temperature", "future_humidity", "future_wind_speed",
-    "future_pressure", "future_precipitation",
-    "future_wind_dir_sin", "future_wind_dir_cos",
+    "pm2_5_roll24", "doy_cos", "pm2_5_roll6", "future_wind_speed",
+    "future_humidity", "doy_sin", "future_temperature", "future_pressure",
+    "month_cos", "pm2_5", "pm2_5_log", "future_wind_dir_sin",
+    "future_wind_dir_cos", "aqi_lag_24h", "aqi_roll24", "day_of_week",
+    "aqi_roll_std_24", "pressure", "aqi_roll6", "humidity",
+    "wind_dir_sin", "month_sin", "pm10_log", "dispersion_index",
 ]
 
 FUTURE_WEATHER_RAW = ["temperature", "humidity", "wind_speed", "pressure", "precipitation","wind_direction","boundary_layer_height"]
@@ -106,6 +100,12 @@ def add_cyclical_encoding(df):
     df["aqi_roll_std_6"] = df["aqi"].rolling(window=6, min_periods=2).std().fillna(0)
     df["aqi_roll_std_24"] = df["aqi"].rolling(window=24, min_periods=2).std().fillna(0)
 
+    df["pm2_5_log"] = np.log1p(df["pm2_5"])
+    df["pm10_log"] = np.log1p(df["pm10"])
+    df["co_log"] = np.log1p(df["co"])
+    df["no2_log"] = np.log1p(df["no2"])
+    df["so2_log"] = np.log1p(df["so2"])
+    df["o3_log"] = np.log1p(df["o3"])
 
     return df
 

@@ -101,6 +101,9 @@ def add_engineered_features(df):
     df["aqi_roll_std_6"] = df["aqi"].rolling(window=6, min_periods=2).std().fillna(0)
     df["aqi_roll_std_24"] = df["aqi"].rolling(window=24, min_periods=2).std().fillna(0)
 
+    df["pm2_5_log"] = np.log1p(df["pm2_5"])
+    df["pm10_log"] = np.log1p(df["pm10"])
+
     return df
 
 
@@ -182,7 +185,7 @@ def build_feature_row(latest_row, future_weather_row):
     row["future_wind_dir_sin"] = np.sin(2 * np.pi * future_weather_row["wind_direction"] / 360)
     row["future_wind_dir_cos"] = np.cos(2 * np.pi * future_weather_row["wind_direction"] / 360)
     return pd.DataFrame([row])[NUMERIC_FEATURES]
-    
+
 def inject_custom_css():
     st.markdown("""
     <style>
@@ -580,6 +583,8 @@ def main():
             use_container_width=True,
         )
 
+    render_eda_section()
+
     st.divider()
     st.subheader("📊 Live Prediction Accuracy Tracker")
     accuracy_df = get_accuracy_summary(supabase)
@@ -602,6 +607,23 @@ def main():
                 "predicted_category", "actual_category", "was_correct"
             ]].sort_values("target_ts", ascending=False)
             st.dataframe(display_df, use_container_width=True)
+
+def render_eda_section():
+    st.divider()
+    with st.expander("📈 Exploratory Data Analysis — 2-Year Trends"):
+        st.caption("Generated from the full historical dataset. See the project report for detailed findings.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image("eda_output/07_category_distribution.png", caption="AQI category distribution")
+            st.image("eda_output/03_hourly_pattern.png", caption="Average AQI by hour of day")
+            st.image("eda_output/05_pm25_vs_aqi.png", caption="PM2.5 vs AQI")
+        with col2:
+            st.image("eda_output/02_monthly_seasonality.png", caption="Seasonal pattern by month")
+            st.image("eda_output/04_correlation_heatmap.png", caption="Feature correlation matrix")
+            st.image("eda_output/06_windspeed_vs_aqi.png", caption="Wind speed vs AQI (dispersion effect)")
+
+        st.image("eda_output/01_aqi_timeseries.png", caption="Full 2-year AQI time series", use_container_width=True)
 
 
 if __name__ == "__main__":
