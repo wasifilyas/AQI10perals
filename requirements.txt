@@ -37,6 +37,7 @@ numpy==2.5.2
 packaging==26.3
 pandas==3.0.5
 pillow==12.3.0
+plotly==6.9.0
 postgrest==2.31.0
 propcache==0.5.2
 protobuf==7.35.1
@@ -56,6 +57,7 @@ requests==2.34.2
 rpds-py==2026.6.3
 scikit-learn==1.9.0
 scipy==1.18.0
+seaborn==0.13.2
 shap==0.52.0
 six==1.17.0
 slicer==0.0.8

@@ -10,6 +10,7 @@ import streamlit as st
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client
+import plotly.graph_objects as go
 
 load_dotenv()
 
@@ -21,18 +22,12 @@ CITY_LON = float(os.getenv("CITY_LON", "67.0011"))
 
 HORIZONS = {"24h": 24, "48h": 48, "72h": 72}
 NUMERIC_FEATURES = [
-    "temperature", "humidity", "wind_speed", "pressure", "precipitation",
-    "pm2_5", "pm10", "co", "no2", "so2", "o3",
-    "aqi_lag_1h", "aqi_lag_24h", "aqi_change_rate",
-    "pm2_5_roll6", "pm2_5_roll24", "aqi_roll6", "aqi_roll24",
-    "aqi_roll_std_6", "aqi_roll_std_24",
-    "boundary_layer_height",
-    "hour_sin", "hour_cos", "month_sin", "month_cos",
-    "doy_sin", "doy_cos", "day_of_week",
-    "wind_dir_sin", "wind_dir_cos", "dispersion_index",
-    "future_temperature", "future_humidity", "future_wind_speed",
-    "future_pressure", "future_precipitation", "future_boundary_layer_height",
-    "future_wind_dir_sin", "future_wind_dir_cos",
+    "pm2_5_roll24", "doy_cos", "pm2_5_roll6", "future_wind_speed",
+    "future_humidity", "doy_sin", "future_temperature", "future_pressure",
+    "month_cos", "pm2_5", "pm2_5_log", "future_wind_dir_sin",
+    "future_wind_dir_cos", "aqi_lag_24h", "aqi_roll24", "day_of_week",
+    "aqi_roll_std_24", "pressure", "aqi_roll6", "humidity",
+    "wind_dir_sin", "month_sin", "pm10_log", "dispersion_index",
 ]
 
 AQI_CATEGORY_COLORS = {
@@ -208,6 +203,61 @@ def inject_custom_css():
         color: #E2E8F0;
     }
 
+    @keyframes drift {
+        0% { background-position: 0% 0%, 100% 0%, 50% 0%; }
+        50% { background-position: 3% 2%, 97% -2%, 52% 3%; }
+        100% { background-position: 0% 0%, 100% 0%, 50% 0%; }
+    }
+
+    .stApp {
+        animation: drift 40s ease-in-out infinite;
+    }
+
+    .particle {
+        position: fixed;
+        bottom: -10px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(226,232,240,0.35), transparent 70%);
+        pointer-events: none;
+        z-index: 0;
+        animation: floatUp linear infinite;
+    }
+
+    @keyframes floatUp {
+        0% {
+            transform: translateY(0) translateX(0);
+            opacity: 0;
+        }
+        10% { opacity: 0.6; }
+        90% { opacity: 0.3; }
+        100% {
+            transform: translateY(-110vh) translateX(20px);
+            opacity: 0;
+        }
+    }
+
+    .block-container {
+        position: relative;
+        z-index: 1;
+    }
+
+    .aqi-glow {
+        position: relative;
+    }
+    .aqi-glow::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 30%;
+        width: 220px;
+        height: 220px;
+        background: radial-gradient(circle, var(--glow-color) 0%, transparent 70%);
+        transform: translate(-50%, -50%);
+        opacity: 0.25;
+        z-index: -1;
+        border-radius: 50%;
+    }
+
     #MainMenu, footer, header {visibility: hidden;}
 
     .hero-title {
@@ -335,13 +385,19 @@ def render_spectrum_gauge(aqi_value, max_scale=300):
 @st.cache_resource
 def build_shap_explainer(_model):
     try:
-        preprocessor = _model.named_steps["preprocess"]
-        estimator = _model.named_steps["model"]
+        if hasattr(_model, "named_estimators_"):
+            gb_pipeline = _model.named_estimators_.get("gb")
+            if gb_pipeline is None:
+                return None, None
+            preprocessor = gb_pipeline.named_steps["preprocess"]
+            estimator = gb_pipeline.named_steps["model"]
+        else:
+            preprocessor = _model.named_steps["preprocess"]
+            estimator = _model.named_steps["model"]
         return shap.TreeExplainer(estimator), preprocessor
     except Exception:
         return None, None
-
-
+    
 def render_shap_explanation(model, feature_row, horizon_label):
     explainer, preprocessor = build_shap_explainer(model)
     if explainer is None:
@@ -374,10 +430,10 @@ def render_shap_explanation(model, feature_row, horizon_label):
         ax.set_title(f"What's driving the {horizon_label} prediction", color="#F1F5F9", fontsize=11)
 
         st.pyplot(fig)
-        st.caption("🟠 Orange bars push AQI higher · 🟢 Green bars push AQI lower")
+        note = " (based on the Gradient Boosting half of the ensemble)" if hasattr(model, "named_estimators_") else ""
+        st.caption(f"🟠 Orange bars push AQI higher · 🟢 Green bars push AQI lower{note}")
     except Exception as e:
         st.info(f"Feature importance unavailable: {e}")
-
 
 def log_predictions(supabase, forecast_results, now):
     records = []
@@ -451,9 +507,27 @@ def get_accuracy_summary(supabase):
     return df
 
 
+def render_haze_particles(count=18):
+    import random
+    random.seed(42)
+    particles_html = ""
+    for i in range(count):
+        size = random.randint(3, 9)
+        left = random.randint(0, 100)
+        duration = random.randint(18, 40)
+        delay = random.randint(0, 30)
+        particles_html += (
+            f'<div class="particle" style="'
+            f'width:{size}px;height:{size}px;left:{left}%;'
+            f'animation-duration:{duration}s;animation-delay:-{delay}s;"></div>'
+        )
+    st.markdown(particles_html, unsafe_allow_html=True)
+
+
 def main():
     st.set_page_config(page_title=f"{CITY_NAME} AQI Forecast", page_icon="🌫️", layout="wide")
     inject_custom_css()
+    render_haze_particles()
     st.markdown(f'<div class="hero-title">{CITY_NAME} Air Quality Station</div>', unsafe_allow_html=True)
     st.markdown('<div class="hero-sub">Live readings and 3-day forecast (daily average), updated hourly</div>', unsafe_allow_html=True)
 
@@ -470,7 +544,8 @@ def main():
 
     col1, col2 = st.columns([1, 2])
     with col1:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        glow_color = AQI_CATEGORY_COLORS[current_category]
+        st.markdown(f'<div class="glass-card aqi-glow" style="--glow-color:{glow_color};">', unsafe_allow_html=True)
         st.markdown('<div class="aqi-label">Current AQI</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="aqi-number">{current_aqi:.0f}</div>', unsafe_allow_html=True)
         st.markdown(
@@ -573,8 +648,7 @@ def main():
 
     st.divider()
     st.subheader("Forecast Trend")
-    chart_df = pd.DataFrame(forecast_results)
-    st.line_chart(chart_df.set_index("day")["predicted_aqi"])
+    render_forecast_chart(forecast_results, current_aqi)
 
     st.divider()
     with st.expander("Recent historical readings"):
@@ -625,6 +699,28 @@ def render_eda_section():
 
         st.image("eda_output/01_aqi_timeseries.png", caption="Full 2-year AQI time series", use_container_width=True)
 
+def render_forecast_chart(forecast_results, current_aqi):
+    days = ["Today"] + [r["day"] for r in forecast_results]
+    values = [current_aqi] + [r["predicted_aqi"] for r in forecast_results]
+    colors = [AQI_CATEGORY_COLORS.get(aqi_to_category(v), "#888") for v in values]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=days, y=values, mode="lines+markers",
+        line=dict(color="#64748B", width=2, shape="spline"),
+        marker=dict(size=14, color=colors, line=dict(width=2, color="#0B1120")),
+        fill="tozeroy", fillcolor="rgba(100,116,139,0.08)",
+    ))
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#E2E8F0", family="IBM Plex Mono"),
+        margin=dict(l=10, r=10, t=10, b=10),
+        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", title="AQI"),
+        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+        height=280,
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
     main()
