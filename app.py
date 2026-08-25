@@ -778,7 +778,7 @@ def main():
     render_live_weather_map()
 
     st.divider()
-    st.subheader("🔍 Why these predictions? (Day 1 breakdown)")
+    st.subheader("Why these predictions? (Day 1 breakdown)")
     day1_label = list(HORIZONS.keys())[0]
     day1_target = now + pd.Timedelta(hours=HORIZONS[day1_label])
     day1_weather = get_future_weather_avg(forecast_df, day1_target, HORIZONS[day1_label])
