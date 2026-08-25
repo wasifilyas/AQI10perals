@@ -489,7 +489,7 @@ def render_sky_background(current_category="Moderate"):
     </style>
     """
     st.markdown(svg, unsafe_allow_html=True)    
-
+    
 @st.cache_resource
 def build_shap_explainer(_model):
     try:
@@ -502,7 +502,13 @@ def build_shap_explainer(_model):
         else:
             preprocessor = _model.named_steps["preprocess"]
             estimator = _model.named_steps["model"]
-        return shap.TreeExplainer(estimator), preprocessor
+
+        if hasattr(estimator, "tree_") or hasattr(estimator, "estimators_"):
+            explainer = shap.TreeExplainer(estimator)
+        else:
+            explainer = shap.LinearExplainer(estimator, masker=shap.maskers.Independent(np.zeros((1, len(NUMERIC_FEATURES)))))
+
+        return explainer, preprocessor
     except Exception:
         return None, None
     
