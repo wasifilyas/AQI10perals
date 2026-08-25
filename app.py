@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client
 import plotly.graph_objects as go
+import streamlit.components.v1 as components
 
 load_dotenv()
 
@@ -219,7 +220,7 @@ def inject_custom_css():
         border-radius: 50%;
         background: radial-gradient(circle, rgba(226,232,240,0.35), transparent 70%);
         pointer-events: none;
-        z-index: 0;
+        z-index: -1;
         animation: floatUp linear infinite;
     }
 
@@ -233,6 +234,25 @@ def inject_custom_css():
         100% {
             transform: translateY(-110vh) translateX(20px);
             opacity: 0;
+        }
+    }
+
+    .cloud {
+        position: fixed;
+        left: -20vw;
+        border-radius: 50%;
+        filter: blur(40px);
+        pointer-events: none;
+        z-index: -1;
+        animation: driftAcross linear infinite;
+    }
+
+    @keyframes driftAcross {
+        0% { 
+        transform: translateX(-15vw); 
+        }
+        100% { 
+        transform: translateX(115vw); 
         }
     }
 
@@ -276,11 +296,11 @@ def inject_custom_css():
     }
 
     .glass-card {
-        background: rgba(255,255,255,0.03);
-        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(11,17,32,0.75);
+        border: 1px solid rgba(255,255,255,0.10);
         border-radius: 14px;
         padding: 24px;
-        backdrop-filter: blur(8px);
+        backdrop-filter: blur(12px);
     }
 
     .aqi-number {
@@ -291,10 +311,11 @@ def inject_custom_css():
         color: #F1F5F9;
     }
     .aqi-label {
-        font-size: 0.8rem;
+        font-size: 0.9rem;
+        font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        color: #64748B;
+        color: #000000;
         margin-bottom: 8px;
     }
 
@@ -318,7 +339,8 @@ def inject_custom_css():
     }
     .day-label {
         font-family: 'IBM Plex Mono', monospace;
-        color: #94A3B8;
+        color: #E2E8F0;
+        font-weight: 700;
         font-size: 0.85rem;
         text-transform: uppercase;
         letter-spacing: 0.06em;
@@ -381,6 +403,92 @@ def render_spectrum_gauge(aqi_value, max_scale=300):
     </div>
     """, unsafe_allow_html=True)
 
+def render_live_weather_map():
+    st.divider()
+    st.subheader("🗺️ Live Weather Map — Karachi")
+    st.caption("Real-time wind and temperature, centered on Karachi.")
+
+    windy_url = (
+        f"https://embed.windy.com/embed2.html?"
+        f"lat={CITY_LAT}&lon={CITY_LON}"
+        f"&detailLat={CITY_LAT}&detailLon={CITY_LON}"
+        f"&width=650&height=450&zoom=9"
+        f"&level=surface&overlay=wind&product=ecmwf"
+        f"&menu=&message=true&marker=true&calendar=now"
+        f"&pressure=&type=map&location=coordinates"
+        f"&detail=&metricWind=default&metricTemp=default&radarRange=-1"
+    )
+
+    components.html(
+        f'<iframe width="100%" height="450" src="{windy_url}" frameborder="0"></iframe>',
+        height=470,
+    )
+
+def render_sky_background(current_category="Moderate"):
+    sky_gradients = {
+        "Good": ("#4A90D9", "#87CEEB", "#E8F4F8"),
+        "Moderate": ("#5B8DB8", "#D4A574", "#F4E4C1"),
+        "Unhealthy (Sensitive)": ("#8B7355", "#C9955A", "#E8C99B"),
+        "Unhealthy": ("#7A6248", "#B8834A", "#D4A15C"),
+        "Very Unhealthy": ("#6B5344", "#8B6F47", "#A8845C"),
+        "Hazardous": ("#5C4A3A", "#7A5F42", "#8F6E48"),
+    }
+    top, mid, horizon = sky_gradients.get(current_category, sky_gradients["Moderate"])
+
+    svg = f"""
+    <div style="position:fixed; top:0; left:0; width:100%; height:340px; z-index:-1; overflow:hidden; pointer-events:none;">
+    <svg viewBox="0 0 1600 340" preserveAspectRatio="xMidYMax slice" style="width:100%; height:100%;">
+        <defs>
+            <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="{top}"/>
+                <stop offset="55%" stop-color="{mid}"/>
+                <stop offset="100%" stop-color="{horizon}"/>
+            </linearGradient>
+        </defs>
+        <rect width="1600" height="340" fill="url(#sky)"/>
+
+        <g opacity="0.85" fill="#FFFFFF">
+            <ellipse class="skycloud" cx="150" cy="70" rx="90" ry="28"/>
+            <ellipse class="skycloud" cx="220" cy="60" rx="60" ry="22"/>
+            <ellipse class="skycloud" cx="600" cy="50" rx="110" ry="30" opacity="0.7"/>
+            <ellipse class="skycloud" cx="680" cy="65" rx="70" ry="24" opacity="0.7"/>
+            <ellipse class="skycloud" cx="1150" cy="90" rx="100" ry="26" opacity="0.6"/>
+            <ellipse class="skycloud" cx="1400" cy="55" rx="80" ry="24" opacity="0.8"/>
+        </g>
+
+        <g fill="#0B1120" opacity="0.75">
+            <rect x="40" y="220" width="35" height="120"/>
+            <rect x="90" y="180" width="45" height="160"/>
+            <rect x="150" y="240" width="30" height="100"/>
+            <rect x="195" y="150" width="55" height="190"/>
+            <rect x="265" y="200" width="35" height="140"/>
+            <rect x="320" y="170" width="40" height="170"/>
+            <rect x="500" y="190" width="38" height="150"/>
+            <rect x="550" y="140" width="60" height="200"/>
+            <rect x="625" y="210" width="32" height="130"/>
+            <rect x="670" y="165" width="45" height="175"/>
+            <rect x="900" y="195" width="36" height="145"/>
+            <rect x="950" y="155" width="50" height="185"/>
+            <rect x="1015" y="215" width="30" height="125"/>
+            <rect x="1200" y="180" width="42" height="160"/>
+            <rect x="1255" y="145" width="55" height="195"/>
+            <rect x="1325" y="205" width="34" height="135"/>
+            <rect x="1450" y="175" width="40" height="165"/>
+            <rect x="1500" y="200" width="30" height="140"/>
+        </g>
+    </svg>
+    </div>
+    <style>
+        .skycloud {{
+            animation: driftSlow 90s linear infinite;
+        }}
+        @keyframes driftSlow {{
+            0% {{ transform: translateX(-100px); }}
+            100% {{ transform: translateX(1700px); }}
+        }}
+    </style>
+    """
+    st.markdown(svg, unsafe_allow_html=True)    
 
 @st.cache_resource
 def build_shap_explainer(_model):
@@ -523,6 +631,66 @@ def render_haze_particles(count=18):
         )
     st.markdown(particles_html, unsafe_allow_html=True)
 
+def render_sky_layer(current_category="Moderate"):
+    haze_color = AQI_CATEGORY_COLORS.get(current_category, "#888888")
+    clouds_html = f"""
+    <div class="cloud" style="width:340px;height:120px;top:8%;
+        background:radial-gradient(circle, rgba(255,255,255,0.9), transparent 70%);
+        animation-duration:75s;animation-delay:-5s;"></div>
+    <div class="cloud" style="width:260px;height:90px;top:18%;
+        background:radial-gradient(circle, {haze_color}22, transparent 70%);
+        animation-duration:95s;animation-delay:-30s;"></div>
+    <div class="cloud" style="width:420px;height:150px;top:4%;
+        background:radial-gradient(circle, rgba(226,232,240,0.07), transparent 70%);
+        animation-duration:110s;animation-delay:-60s;"></div>
+    <div class="cloud" style="width:200px;height:80px;top:30%;
+        background:radial-gradient(circle, {haze_color}18, transparent 70%);
+        animation-duration:65s;animation-delay:-15s;"></div>
+    """
+    st.markdown(clouds_html, unsafe_allow_html=True)
+
+
+def render_eda_section():
+    st.divider()
+    with st.expander("📈 Exploratory Data Analysis — 2-Year Trends"):
+        st.caption("Generated from the full historical dataset. See the project report for detailed findings.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image("eda_output/07_category_distribution.png", caption="AQI category distribution")
+            st.image("eda_output/03_hourly_pattern.png", caption="Average AQI by hour of day")
+            st.image("eda_output/05_pm25_vs_aqi.png", caption="PM2.5 vs AQI")
+        with col2:
+            st.image("eda_output/02_monthly_seasonality.png", caption="Seasonal pattern by month")
+            st.image("eda_output/04_correlation_heatmap.png", caption="Feature correlation matrix")
+            st.image("eda_output/06_windspeed_vs_aqi.png", caption="Wind speed vs AQI (dispersion effect)")
+
+        st.image("eda_output/01_aqi_timeseries.png", caption="Full 2-year AQI time series", use_container_width=True)
+
+
+def render_forecast_chart(forecast_results, current_aqi):
+    days = ["Today"] + [r["day"] for r in forecast_results]
+    values = [current_aqi] + [r["predicted_aqi"] for r in forecast_results]
+    colors = [AQI_CATEGORY_COLORS.get(aqi_to_category(v), "#888") for v in values]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=days, y=values, mode="lines+markers",
+        line=dict(color="#64748B", width=2, shape="spline"),
+        marker=dict(size=14, color=colors, line=dict(width=2, color="#0B1120")),
+        fill="tozeroy", fillcolor="rgba(100,116,139,0.08)",
+    ))
+    fig.update_layout(
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#E2E8F0", family="IBM Plex Mono"),
+        margin=dict(l=10, r=10, t=10, b=10),
+        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", title="AQI"),
+        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+        height=280,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
 
 def main():
     st.set_page_config(page_title=f"{CITY_NAME} AQI Forecast", page_icon="🌫️", layout="wide")
@@ -541,6 +709,7 @@ def main():
 
     current_aqi = latest_row["aqi"]
     current_category = aqi_to_category(current_aqi)
+    render_sky_layer(current_category)
 
     col1, col2 = st.columns([1, 2])
     with col1:
@@ -554,6 +723,7 @@ def main():
             unsafe_allow_html=True,
         )
         render_spectrum_gauge(current_aqi)
+        render_sky_background(current_category)
         st.markdown('</div>', unsafe_allow_html=True)
     with col2:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
@@ -562,6 +732,8 @@ def main():
         st.write(f"**Location:** {CITY_NAME} ({CITY_LAT}, {CITY_LON})")
         st.write(f"**Source:** Open-Meteo · Supabase · scikit-learn")
         st.markdown('</div>', unsafe_allow_html=True)
+
+    
 
     st.divider()
     st.subheader("3-Day Forecast (Daily Average)")
@@ -602,6 +774,8 @@ def main():
             st.caption("Predicted avg AQI")
             if clf_record:
                 st.caption(f"Model accuracy: {clf_record['accuracy']:.1%}")
+
+    render_live_weather_map()
 
     st.divider()
     st.subheader("🔍 Why these predictions? (Day 1 breakdown)")
@@ -682,45 +856,6 @@ def main():
             ]].sort_values("target_ts", ascending=False)
             st.dataframe(display_df, use_container_width=True)
 
-def render_eda_section():
-    st.divider()
-    with st.expander("📈 Exploratory Data Analysis — 2-Year Trends"):
-        st.caption("Generated from the full historical dataset. See the project report for detailed findings.")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image("eda_output/07_category_distribution.png", caption="AQI category distribution")
-            st.image("eda_output/03_hourly_pattern.png", caption="Average AQI by hour of day")
-            st.image("eda_output/05_pm25_vs_aqi.png", caption="PM2.5 vs AQI")
-        with col2:
-            st.image("eda_output/02_monthly_seasonality.png", caption="Seasonal pattern by month")
-            st.image("eda_output/04_correlation_heatmap.png", caption="Feature correlation matrix")
-            st.image("eda_output/06_windspeed_vs_aqi.png", caption="Wind speed vs AQI (dispersion effect)")
-
-        st.image("eda_output/01_aqi_timeseries.png", caption="Full 2-year AQI time series", use_container_width=True)
-
-def render_forecast_chart(forecast_results, current_aqi):
-    days = ["Today"] + [r["day"] for r in forecast_results]
-    values = [current_aqi] + [r["predicted_aqi"] for r in forecast_results]
-    colors = [AQI_CATEGORY_COLORS.get(aqi_to_category(v), "#888") for v in values]
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=days, y=values, mode="lines+markers",
-        line=dict(color="#64748B", width=2, shape="spline"),
-        marker=dict(size=14, color=colors, line=dict(width=2, color="#0B1120")),
-        fill="tozeroy", fillcolor="rgba(100,116,139,0.08)",
-    ))
-    fig.update_layout(
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#E2E8F0", family="IBM Plex Mono"),
-        margin=dict(l=10, r=10, t=10, b=10),
-        yaxis=dict(gridcolor="rgba(255,255,255,0.08)", title="AQI"),
-        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
-        height=280,
-    )
-    st.plotly_chart(fig, use_container_width=True)
 
 if __name__ == "__main__":
     main()
