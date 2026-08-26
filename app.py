@@ -11,7 +11,6 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from supabase import create_client
 import plotly.graph_objects as go
-import streamlit.components.v1 as components
 
 load_dotenv()
 
@@ -403,26 +402,6 @@ def render_spectrum_gauge(aqi_value, max_scale=300):
     </div>
     """, unsafe_allow_html=True)
 
-def render_live_weather_map():
-    st.divider()
-    st.subheader("🗺️ Live Weather Map — Karachi")
-    st.caption("Real-time wind and temperature, centered on Karachi.")
-
-    windy_url = (
-        f"https://embed.windy.com/embed2.html?"
-        f"lat={CITY_LAT}&lon={CITY_LON}"
-        f"&detailLat={CITY_LAT}&detailLon={CITY_LON}"
-        f"&width=650&height=450&zoom=9"
-        f"&level=surface&overlay=wind&product=ecmwf"
-        f"&menu=&message=true&marker=true&calendar=now"
-        f"&pressure=&type=map&location=coordinates"
-        f"&detail=&metricWind=default&metricTemp=default&radarRange=-1"
-    )
-
-    components.html(
-        f'<iframe width="100%" height="450" src="{windy_url}" frameborder="0"></iframe>',
-        height=470,
-    )
 
 def render_sky_background(current_category="Moderate"):
     sky_gradients = {
@@ -781,7 +760,7 @@ def main():
             if clf_record:
                 st.caption(f"Model accuracy: {clf_record['accuracy']:.1%}")
 
-    render_live_weather_map()
+    
 
     st.divider()
     st.subheader("Why these predictions? (Day 1 breakdown)")
