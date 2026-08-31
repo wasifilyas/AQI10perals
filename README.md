@@ -4,7 +4,7 @@ A real-time Air Quality Index (AQI) forecasting system for Karachi, Pakistan. It
 
 ---
 
-## ✨ Features
+##  Features
 
 | Feature | Description |
 |---|---|
@@ -18,7 +18,7 @@ A real-time Air Quality Index (AQI) forecasting system for Karachi, Pakistan. It
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 ┌─────────────────────┐    hourly cron     ┌──────────────────────┐
@@ -59,7 +59,7 @@ A real-time Air Quality Index (AQI) forecasting system for Karachi, Pakistan. It
 
 ---
 
-## 📂 Project Structure
+##  Project Structure
 
 ```
 aqi-predictor/
@@ -86,7 +86,7 @@ aqi-predictor/
 
 ---
 
-## 🧠 ML Pipeline
+##  ML Pipeline
 
 ### Data Sources
 - **Weather:** [Open-Meteo Archive API](https://open-meteo.com/) — temperature, humidity, wind speed/direction, pressure, precipitation, boundary layer height
@@ -111,16 +111,16 @@ Both models are wrapped in scikit-learn `Pipeline` objects (imputation → scali
 ### AQI Categories
 | AQI Range | Category | Color |
 |---|---|---|
-| 0–50 | Good | 🟢 |
-| 51–100 | Moderate | 🟡 |
-| 101–150 | Unhealthy (Sensitive) | 🟠 |
-| 151–200 | Unhealthy | 🔴 |
-| 201–300 | Very Unhealthy | 🟣 |
-| 301+ | Hazardous | 🟤 |
+| 0–50 | Good | 
+| 51–100 | Moderate | 
+| 101–150 | Unhealthy (Sensitive) | 
+| 151–200 | Unhealthy | 
+| 201–300 | Very Unhealthy | 
+| 301+ | Hazardous | 
 
 ---
 
-## ⚙️ Setup & Installation
+##  Setup & Installation
 
 ### Prerequisites
 - Python 3.13+
@@ -209,7 +209,7 @@ streamlit run app.py
 
 ---
 
-## 👥 Team
+##  Team
 
 **AQI 10perals**
 
