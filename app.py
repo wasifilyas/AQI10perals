@@ -474,43 +474,37 @@ def render_sky_background(current_category="Moderate"):
     st.markdown(svg, unsafe_allow_html=True)    
     
 @st.cache_resource
-def build_shap_explainer(_model):
-    try:
-        if hasattr(_model, "named_estimators_"):
-            gb_pipeline = _model.named_estimators_.get("gb")
-            if gb_pipeline is None:
-                return None, None
-            preprocessor = gb_pipeline.named_steps["preprocess"]
-            estimator = gb_pipeline.named_steps["model"]
-        else:
-            preprocessor = _model.named_steps["preprocess"]
-            estimator = _model.named_steps["model"]
+def build_shap_explainer(_model, _background):
+    if hasattr(_model, "named_estimators_"):
+        gb_pipeline = _model.named_estimators_.get("gb")
+        if gb_pipeline is None:
+            return None, None
+        preprocessor = gb_pipeline.named_steps["preprocess"]
+        estimator = gb_pipeline.named_steps["model"]
+    else:
+        preprocessor = _model.named_steps["preprocess"]
+        estimator = _model.named_steps["model"]
 
-        if hasattr(estimator, "tree_") or hasattr(estimator, "estimators_"):
-            explainer = shap.TreeExplainer(estimator)
-        else:
-            explainer = shap.LinearExplainer(estimator, masker=shap.maskers.Independent(np.zeros((1, len(NUMERIC_FEATURES)))))
-
-        return explainer, preprocessor
-    except Exception:
-        return None, None
+    background_transformed = preprocessor.transform(_background)
+    explainer = shap.Explainer(estimator, background_transformed)
+    return explainer, preprocessor
     
-def render_shap_explanation(model, feature_row, horizon_label):
-    explainer, preprocessor = build_shap_explainer(model)
+def render_shap_explanation(model, feature_row, horizon_label, background_df):
+    explainer, preprocessor = build_shap_explainer(model, background_df)
     if explainer is None:
         st.info("Feature importance isn't available for this model type.")
         return
 
     try:
         transformed = preprocessor.transform(feature_row)
-        shap_values = explainer.shap_values(transformed)
-
-        if isinstance(shap_values, list):
-            shap_values = shap_values[0]
+        shap_values = explainer(transformed)
+        values = shap_values.values[0]
+        if values.ndim > 1:
+            values = values[:, 0]
 
         importance_df = pd.DataFrame({
             "feature": NUMERIC_FEATURES,
-            "impact": shap_values[0],
+            "impact": values,
         }).sort_values("impact", key=abs, ascending=False).head(10)
 
         fig, ax = plt.subplots(figsize=(6, 4))
@@ -530,7 +524,7 @@ def render_shap_explanation(model, feature_row, horizon_label):
         note = " (based on the Gradient Boosting half of the ensemble)" if hasattr(model, "named_estimators_") else ""
         st.caption(f"🟠 Orange bars push AQI higher · 🟢 Green bars push AQI lower{note}")
     except Exception as e:
-        st.info(f"Feature importance unavailable: {e}")
+        st.error(f"SHAP ERROR: {type(e).__name__}: {e}")
 
 def build_historical_feature_matrix(recent_df, limit=30):
     df = recent_df.tail(limit).copy()
@@ -550,17 +544,18 @@ def build_historical_feature_matrix(recent_df, limit=30):
 
 
 def render_global_importance(model, feature_matrix):
-    explainer, preprocessor = build_shap_explainer(model)
+    explainer, preprocessor = build_shap_explainer(model, feature_matrix)
     if explainer is None:
         st.info("Global feature importance isn't available for this model type.")
         return
     try:
         transformed = preprocessor.transform(feature_matrix)
-        shap_values = explainer.shap_values(transformed)
-        if isinstance(shap_values, list):
-            shap_values = shap_values[0]
+        shap_values = explainer(transformed, check_additivity=False)
+        values = shap_values.values
+        if values.ndim > 2:
+            values = values[:, :, 0]
 
-        mean_abs = np.abs(shap_values).mean(axis=0)
+        mean_abs = np.abs(values).mean(axis=0)
         importance_df = pd.DataFrame({
             "feature": NUMERIC_FEATURES,
             "importance": mean_abs,
@@ -580,8 +575,8 @@ def render_global_importance(model, feature_matrix):
         st.pyplot(fig)
         st.caption("Averaged across the most recent 30 hourly readings — shows what matters overall, not just for one prediction.")
     except Exception as e:
-        st.info(f"Global importance unavailable: {e}")
-
+        st.error(f"Global importance error: {type(e).__name__}: {e}")
+        
 def log_predictions(supabase, forecast_results, now):
     records = []
     for r in forecast_results:
@@ -820,6 +815,8 @@ def main():
     st.subheader("Why these predictions?")
     shap_tabs = st.tabs([f"Day {i+1} ({h})" for i, h in enumerate(HORIZONS.keys())] + ["Overall importance"])
 
+    background_sample = build_historical_feature_matrix(recent_df)
+
     for i, (horizon_label, horizon_hours) in enumerate(HORIZONS.items()):
         with shap_tabs[i]:
             target_time = now + pd.Timedelta(hours=horizon_hours)
@@ -827,7 +824,7 @@ def main():
             features = build_feature_row(latest_row, weather)
             reg_model, _ = load_active_model(supabase, horizon_label, "regressor")
             if reg_model:
-                render_shap_explanation(reg_model, features, horizon_label)
+                render_shap_explanation(reg_model, features, horizon_label, background_sample)
 
     with shap_tabs[-1]:
         day1_reg_model, _ = load_active_model(supabase, "24h", "regressor")
