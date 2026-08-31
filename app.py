@@ -288,7 +288,7 @@ def inject_custom_css():
         margin-bottom: 0;
     }
     .hero-sub {
-        color: #64748B;
+        color: #94A3B8;
         font-size: 0.95rem;
         margin-top: 4px;
         margin-bottom: 1.5rem;
@@ -314,7 +314,7 @@ def inject_custom_css():
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        color: #000000;
+        color:  #F1F5F9;
         margin-bottom: 8px;
     }
 
@@ -373,8 +373,8 @@ def inject_custom_css():
         display: flex;
         justify-content: space-between;
         font-family: 'IBM Plex Mono', monospace;
-        font-size: 0.7rem;
-        color: #64748B;
+        font-size: 0.75rem;
+        color: #A8B3C4;
         margin-top: 6px;
     }
 
@@ -384,6 +384,10 @@ def inject_custom_css():
 
     .stMetric, div[data-testid="stMetricValue"] {
         color: #F1F5F9 !important;
+    }
+    [data-testid="stCaptionContainer"] p, .stCaption {
+        color: #A8B3C4 !important;
+        font-size: 0.85rem !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -527,6 +531,56 @@ def render_shap_explanation(model, feature_row, horizon_label):
         st.caption(f"🟠 Orange bars push AQI higher · 🟢 Green bars push AQI lower{note}")
     except Exception as e:
         st.info(f"Feature importance unavailable: {e}")
+
+def build_historical_feature_matrix(recent_df, limit=30):
+    df = recent_df.tail(limit).copy()
+    rows = []
+    for _, row in df.iterrows():
+        r = row.copy()
+        r["future_temperature"] = row["temperature"]
+        r["future_humidity"] = row["humidity"]
+        r["future_wind_speed"] = row["wind_speed"]
+        r["future_pressure"] = row["pressure"]
+        r["future_precipitation"] = row["precipitation"]
+        r["future_boundary_layer_height"] = row.get("boundary_layer_height", 0)
+        r["future_wind_dir_sin"] = np.sin(2 * np.pi * row["wind_direction"] / 360)
+        r["future_wind_dir_cos"] = np.cos(2 * np.pi * row["wind_direction"] / 360)
+        rows.append(r)
+    return pd.DataFrame(rows)[NUMERIC_FEATURES]
+
+
+def render_global_importance(model, feature_matrix):
+    explainer, preprocessor = build_shap_explainer(model)
+    if explainer is None:
+        st.info("Global feature importance isn't available for this model type.")
+        return
+    try:
+        transformed = preprocessor.transform(feature_matrix)
+        shap_values = explainer.shap_values(transformed)
+        if isinstance(shap_values, list):
+            shap_values = shap_values[0]
+
+        mean_abs = np.abs(shap_values).mean(axis=0)
+        importance_df = pd.DataFrame({
+            "feature": NUMERIC_FEATURES,
+            "importance": mean_abs,
+        }).sort_values("importance", ascending=False).head(10)
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+        fig.patch.set_facecolor("#0B1120")
+        ax.set_facecolor("#0B1120")
+        ax.barh(importance_df["feature"], importance_df["importance"], color="#3B82C4")
+        ax.invert_yaxis()
+        ax.set_xlabel("Mean |SHAP value| — average impact on AQI", color="#E2E8F0")
+        ax.tick_params(colors="#E2E8F0")
+        for spine in ax.spines.values():
+            spine.set_color("#334155")
+        ax.set_title("Overall feature importance", color="#F1F5F9", fontsize=11)
+
+        st.pyplot(fig)
+        st.caption("Averaged across the most recent 30 hourly readings — shows what matters overall, not just for one prediction.")
+    except Exception as e:
+        st.info(f"Global importance unavailable: {e}")
 
 def log_predictions(supabase, forecast_results, now):
     records = []
@@ -763,14 +817,23 @@ def main():
     
 
     st.divider()
-    st.subheader("Why these predictions? (Day 1 breakdown)")
-    day1_label = list(HORIZONS.keys())[0]
-    day1_target = now + pd.Timedelta(hours=HORIZONS[day1_label])
-    day1_weather = get_future_weather_avg(forecast_df, day1_target, HORIZONS[day1_label])
-    day1_features = build_feature_row(latest_row, day1_weather)
-    day1_reg_model, _ = load_active_model(supabase, day1_label, "regressor")
-    if day1_reg_model:
-        render_shap_explanation(day1_reg_model, day1_features, day1_label)
+    st.subheader("Why these predictions?")
+    shap_tabs = st.tabs([f"Day {i+1} ({h})" for i, h in enumerate(HORIZONS.keys())] + ["Overall importance"])
+
+    for i, (horizon_label, horizon_hours) in enumerate(HORIZONS.items()):
+        with shap_tabs[i]:
+            target_time = now + pd.Timedelta(hours=horizon_hours)
+            weather = get_future_weather_avg(forecast_df, target_time, horizon_hours)
+            features = build_feature_row(latest_row, weather)
+            reg_model, _ = load_active_model(supabase, horizon_label, "regressor")
+            if reg_model:
+                render_shap_explanation(reg_model, features, horizon_label)
+
+    with shap_tabs[-1]:
+        day1_reg_model, _ = load_active_model(supabase, "24h", "regressor")
+        if day1_reg_model:
+            hist_matrix = build_historical_feature_matrix(recent_df)
+            render_global_importance(day1_reg_model, hist_matrix)
 
     update_resolved_predictions(supabase)
     log_predictions(supabase, forecast_results, now)
@@ -794,7 +857,7 @@ def main():
             st.markdown(f"""
             <div style="border-left: 3px solid {color}; padding-left: 12px; margin: 12px 0;">
                 <strong>{r['day']} ({r['date']}) — {r['category']}</strong> (Avg AQI {r['predicted_aqi']:.0f})<br>
-                <span style="color:#94A3B8; font-size:0.9rem;">{guidance}</span>
+                <span style="color:#C4CDDB; font-size:0.9rem;">{guidance}</span>
             </div>
             """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
